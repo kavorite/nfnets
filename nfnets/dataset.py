@@ -73,18 +73,14 @@ def load(
             decoders={"image": tfds.decode.SkipDecoding()},
         )
     else:
-        raise ValueError(
-            "Only imagenet is presently supported for this dataset."
-        )
+        raise ValueError("Only imagenet is presently supported for this dataset.")
 
     if is_training:
         ds = ds.repeat()
         ds = ds.shuffle(buffer_size=10 * total_batch_size, seed=None)
     else:
         if split.num_examples % total_batch_size != 0:
-            raise ValueError(
-                f"Test/valid must be divisible by {total_batch_size}"
-            )
+            raise ValueError(f"Test/valid must be divisible by {total_batch_size}")
 
     def augment_normalize(batch):
         """Optionally augment, then normalize an image."""
@@ -107,10 +103,7 @@ def load(
             # If float provided, get it
             if "mixup_" in augment_name:
                 alpha = augment_name.split("mixup_")[1].split("_")
-                if (
-                    any(alpha)
-                    and re.match(r"^-?\d+(?:\.\d+)?$", alpha[0]) is not None
-                ):
+                if any(alpha) and re.match(r"^-?\d+(?:\.\d+)?$", alpha[0]) is not None:
                     mixup_alpha = float(alpha[0])
             beta = tfp.distributions.Beta(mixup_alpha, mixup_alpha)
             out["mixup_ratio"] = beta.sample()
@@ -171,9 +164,7 @@ def load(
             ds = ds.map(cast_fn)
         else:
             ds = ds.batch(batch_size)
-        ds = ds.map(
-            lambda data: (data["images"], tf.cast(data["labels"], tf.float32))
-        )
+        ds = ds.map(lambda data: (data["images"], tf.cast(data["labels"], tf.float32)))
 
     ds = ds.prefetch(AUTOTUNE)
     ds = tfds.as_numpy(ds)
@@ -202,16 +193,12 @@ def _preprocess_image(
         image = _decode_and_random_crop(image_bytes, image_size)
         image = tf.image.random_flip_left_right(image)
         assert image.dtype == tf.uint8
-        image = tf.image.resize(
-            image, image_size, tf.image.ResizeMethod.BICUBIC
-        )
+        image = tf.image.resize(image, image_size, tf.image.ResizeMethod.BICUBIC)
     else:
         if eval_preproc == "crop_resize":
             image = _decode_and_center_crop(image_bytes, image_size=image_size)
             assert image.dtype == tf.uint8
-            image = tf.image.resize(
-                image, image_size, tf.image.ResizeMethod.BICUBIC
-            )
+            image = tf.image.resize(image, image_size, tf.image.ResizeMethod.BICUBIC)
         elif "resize_crop" in eval_preproc:
             # Pass in crop percent
             crop_pct = float(eval_preproc.split("_")[-1])
@@ -374,9 +361,7 @@ def _decode_and_resize_then_crop(
     """Rescales an image to image_size / crop_pct, then center crops."""
     image = tf.image.decode_jpeg(image_bytes, channels=3)
     # Scale image to "scaled size" before taking a center crop
-    if (
-        crop_pct > 1.0
-    ):  # If crop_pct is >1, treat it as num pad pixels (like VGG)
+    if crop_pct > 1.0:  # If crop_pct is >1, treat it as num pad pixels (like VGG)
         scale_size = tuple([int(x + crop_pct) for x in image_size])
     else:
         scale_size = tuple([int(float(x) / crop_pct) for x in image_size])

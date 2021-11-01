@@ -1,7 +1,6 @@
 import tensorflow as tf
 
-from base import WSConv2D, SqueezeExcite, StochDepth
-
+from .base import SqueezeExcite, StochDepth, WSConv2D
 
 nfnet_params = {}
 
@@ -161,9 +160,7 @@ class NFNet(tf.keras.Model):
         else:
             self.drop_rate = drop_rate
         self.which_conv = WSConv2D
-        self.spositives = tf.convert_to_tensor(
-            1.0 - label_smoothing, dtype=tf.float32
-        )
+        self.spositives = tf.convert_to_tensor(1.0 - label_smoothing, dtype=tf.float32)
         self.snegatives = tf.convert_to_tensor(
             label_smoothing / num_classes, dtype=tf.float32
         )
@@ -262,9 +259,7 @@ class NFNet(tf.keras.Model):
         # Head
         if final_conv_mult is None:
             if final_conv_ch is None:
-                raise ValueError(
-                    "Must provide one of final_conv_mult or final_conv_ch"
-                )
+                raise ValueError("Must provide one of final_conv_mult or final_conv_ch")
             ch = final_conv_ch
         else:
             ch = int(final_conv_mult * ch)
@@ -446,9 +441,7 @@ class NFBlock(tf.keras.Model):
         out = self.conv2(tf.keras.layers.Lambda(self.activation)(out))
         out = (self.se(out) * 2) * out  # Multiply by 2 for rescaling
         # Get average residual standard deviation for reporting metrics.
-        res_avg_var = tf.math.reduce_mean(
-            tf.math.reduce_variance(out, axis=[0, 1, 2])
-        )
+        res_avg_var = tf.math.reduce_mean(tf.math.reduce_variance(out, axis=[0, 1, 2]))
         # Apply stochdepth if applicable.
         if self._has_stochdepth:
             out = self.stoch_depth(out, training)

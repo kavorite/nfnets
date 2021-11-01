@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 
 
 class WSConv2D(tf.keras.layers.Conv2D):
@@ -10,52 +9,70 @@ class WSConv2D(tf.keras.layers.Conv2D):
     def __init__(self, *args, **kwargs):
         super(WSConv2D, self).__init__(
             kernel_initializer=tf.keras.initializers.VarianceScaling(
-                scale=1.0, mode='fan_in', distribution='untruncated_normal',
-            ), *args, **kwargs
+                scale=1.0,
+                mode="fan_in",
+                distribution="untruncated_normal",
+            ),
+            *args,
+            **kwargs
         )
         # Get gain
         self.gain = self.add_weight(
-            name='gain',
+            name="gain",
             shape=(self.filters,),
             initializer="ones",
             trainable=True,
-            dtype=self.dtype
+            dtype=self.dtype,
         )
 
     def standardize_weight(self, eps):
         mean = tf.math.reduce_mean(self.kernel, axis=(0, 1, 2), keepdims=True)
         var = tf.math.reduce_variance(self.kernel, axis=(0, 1, 2), keepdims=True)
-        fan_in = np.prod(self.kernel.shape[:-1])
+        fan_in = tf.reduce_prod(self.kernel.shape[:-1])
 
         # Manually fused normalization, eq. to (w - mean) * gain / sqrt(N * var)
-        scale = tf.math.rsqrt(
-            tf.math.maximum(
-                var * fan_in,
-                tf.convert_to_tensor(eps, dtype=self.dtype)
+        scale = (
+            tf.math.rsqrt(
+                tf.math.maximum(
+                    var * fan_in, tf.convert_to_tensor(eps, dtype=self.dtype)
+                )
             )
-        ) * self.gain
+            * self.gain
+        )
         shift = mean * scale
         return self.kernel * scale - shift
 
     def call(self, inputs, eps=1e-4):
         weight = self.standardize_weight(eps)
-        return tf.nn.conv2d(
-            inputs, weight, strides=self.strides,
-            padding=self.padding.upper(), dilations=self.dilation_rate
-        ) + self.bias
+        return (
+            tf.nn.conv2d(
+                inputs,
+                weight,
+                strides=self.strides,
+                padding=self.padding.upper(),
+                dilations=self.dilation_rate,
+            )
+            + self.bias
+        )
 
 
 class SqueezeExcite(tf.keras.Model):
     """Simple Squeeze+Excite module."""
 
-    def __init__(self, in_ch, out_ch, se_ratio=0.5,
-        hidden_ch=None, activation=tf.keras.activations.relu, name=None
+    def __init__(
+        self,
+        in_ch,
+        out_ch,
+        se_ratio=0.5,
+        hidden_ch=None,
+        activation=tf.keras.activations.relu,
+        name=None,
     ):
         super(SqueezeExcite, self).__init__(name=name)
         self.in_ch, self.out_ch = in_ch, out_ch
         if se_ratio is None:
             if hidden_ch is None:
-                raise ValueError('Must provide one of se_ratio or hidden_ch')
+                raise ValueError("Must provide one of se_ratio or hidden_ch")
             self.hidden_ch = hidden_ch
         else:
             self.hidden_ch = max(1, int(self.in_ch * se_ratio))
@@ -83,7 +100,7 @@ class StochDepth(tf.keras.Model):
             return x
         batch_size = tf.shape(x)[0]
         r = tf.random.uniform(shape=[batch_size, 1, 1, 1], dtype=x.dtype)
-        keep_prob = 1. - self.drop_rate
+        keep_prob = 1.0 - self.drop_rate
         binary_tensor = tf.floor(keep_prob + r)
         if self.scale_by_keep:
             x = x / keep_prob
