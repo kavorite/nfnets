@@ -155,7 +155,15 @@ class NFNet(tf.keras.Model):
         self.bneck_pattern = block_params.get("expansion", [0.5] * 4)
         self.group_pattern = block_params.get("group_width", [128] * 4)
         self.big_pattern = block_params.get("big_width", [True] * 4)
-        self.activation = nonlinearities[activation]
+        if isinstance(activation, str):
+            self.activation = nonlinearities[activation]
+        elif callable(activation):
+            self.activation = activation
+        else:
+            activations = ", ".join(nonlinearities.keys())
+            raise ValueError(
+                f"activation function must be callable or one of {activations}"
+            )
         if drop_rate is None:
             self.drop_rate = block_params["drop_rate"]
         else:
