@@ -123,7 +123,8 @@ class NFNet(tf.keras.Model):
 
     def __init__(
         self,
-        num_classes,
+        include_top=True,
+        num_classes=1000,
         variant="F0",
         width=1.0,
         se_ratio=0.5,
@@ -269,14 +270,15 @@ class NFNet(tf.keras.Model):
         # By default, initialize with N(0, 0.01)
         if fc_init is None:
             fc_init = tf.keras.initializers.RandomNormal(mean=0, stddev=0.01)
-        self.fc = tf.keras.layers.Dense(
-            self.num_classes, kernel_initializer=fc_init, use_bias=True
-        )
+        if include_top:
+            self.fc = tf.keras.layers.Dense(
+                self.num_classes, kernel_initializer=fc_init, use_bias=True
+            )
+        else:
+            self.fc = None
 
     def call(self, x, training=True):
         """Return the output of the final layer without any [log-]softmax."""
-        # Stem
-        outputs = {}
         out = self.stem(x)
         # Blocks
         for i, block in enumerate(self.blocks):
@@ -284,12 +286,12 @@ class NFNet(tf.keras.Model):
         # Final-conv->activation, pool, dropout, classify
         out = tf.keras.layers.Activation(self.activation)(self.final_conv(out))
         pool = tf.math.reduce_mean(out, [1, 2])
-        outputs["pool"] = pool
-        # Optionally apply dropout
-        if self.drop_rate > 0.0 and training:
-            pool = tf.keras.layers.Dropout(self.drop_rate)(pool)
-        outputs["logits"] = self.fc(pool)
-        return outputs
+        if self.fc is None:
+            if self.drop_rate > 0.0 and training:
+                pool = tf.keras.layers.Dropout(self.drop_rate)(pool)
+            return dict(pool=pool, logits=self.fc(pool))
+        else:
+            return pool
 
     def train_step(self, data):
         x, y_true = data
