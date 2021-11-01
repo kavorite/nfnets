@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from .base import SqueezeExcite, StochDepth, WSConv2D
+from .base import SqueezeExcite, StochDepth, WSConv2D, serializable
 
 nfnet_params = {}
 
@@ -112,6 +112,7 @@ nonlinearities = {
 }
 
 
+@serializable
 class NFNet(tf.keras.Model):
     """Normalizer-Free Networks with an improved architecture.
     References:
@@ -146,6 +147,14 @@ class NFNet(tf.keras.Model):
         self.variant = variant
         self.width = width
         self.se_ratio = se_ratio
+        self.stochdepth_rate = stochdepth_rate
+        self.drop_rate = drop_rate
+        self.final_conv_ch = final_conv_ch
+        self.final_conv_mult = final_conv_mult
+        self.use_two_convs = use_two_convs
+        self.label_smoothing = label_smoothing
+        self.ema_decay = ema_decay
+        self.clipping_factor = clipping_factor
         # Get variant info
         block_params = self.variant_dict[self.variant]
         self.train_imsize = block_params["train_imsize"]
@@ -285,6 +294,17 @@ class NFNet(tf.keras.Model):
         else:
             self.fc = None
 
+    def get_config(self):
+        return {
+            "stochdepth_rate": self.stochdepth_rate,
+            "drop_rate": self.drop_rate,
+            "final_conv_ch": self.final_conv_ch,
+            "final_conv_mult": self.final_conv_mult,
+            "use_two_convs": self.use_two_convs,
+            "label_smoothing": self.label_smoothing,
+            "ema_decay": self.ema_decay,
+        }
+
     def call(self, x, training=True):
         """Return the output of the final layer without any [log-]softmax."""
         out = self.stem(x)
@@ -294,7 +314,7 @@ class NFNet(tf.keras.Model):
         # Final-conv->activation, pool, dropout, classify
         out = tf.keras.layers.Activation(self.activation)(self.final_conv(out))
         pool = tf.math.reduce_mean(out, [1, 2])
-        if self.fc is None:
+        if self.fc is not None:
             if self.drop_rate > 0.0 and training:
                 pool = tf.keras.layers.Dropout(self.drop_rate)(pool)
             return dict(pool=pool, logits=self.fc(pool))
@@ -344,7 +364,8 @@ class NFNet(tf.keras.Model):
         return {m.name: m.result() for m in self.metrics}
 
 
-class NFBlock(tf.keras.Model):
+@serializable
+class NFBlock(tf.keras.layers.Layer):
     """Normalizer-Free Net Block."""
 
     def __init__(
@@ -359,7 +380,7 @@ class NFBlock(tf.keras.Model):
         beta=1.0,
         alpha=0.2,
         which_conv=WSConv2D,
-        activation=tf.keras.activations.gelu,
+        activation=tf.nn.gelu,
         big_width=True,
         use_two_convs=True,
         stochdepth_rate=None,
@@ -372,9 +393,12 @@ class NFBlock(tf.keras.Model):
         self.kernel_shape = kernel_shape
         self.activation = activation
         self.beta, self.alpha = beta, alpha
+        self.group_size = group_size
+        self.big_width = big_width
+        self.which_conv = which_conv
         # Mimic resnet style bigwidth scaling?
         width = int((self.out_ch if big_width else self.in_ch) * expansion)
-        # Round expanded with based on group count
+        # Round expanded width based on group count
         self.groups = width // group_size
         self.width = group_size * self.groups
         self.stride = stride
@@ -432,6 +456,24 @@ class NFBlock(tf.keras.Model):
             dtype=self.dtype,
         )
 
+    def get_config(self):
+        return {
+            "in_ch": self.in_ch,
+            "out_ch": self.out_ch,
+            "expansion": self.expansion,
+            "kernel_shape": self.kernel_shape,
+            "activation": self.activation,
+            "beta": self.beta,
+            "alpha": self.alpha,
+            "use_two_convs": self.use_two_convs,
+            "group_size": self.group_size,
+            "big_width": self.big_width,
+            "which_conv": self.which_conv,
+            "stochdepth_rate": (
+                self.stoch_depth.drop_rate if self._has_stochdepth else 0.0
+            ),
+        }
+
     def call(self, x, training):
         out = tf.keras.layers.Activation(self.activation)(x) * self.beta
         if self.stride > 1:  # Average-pool downsample.
@@ -462,18 +504,14 @@ class NFBlock(tf.keras.Model):
 
 def unitwise_norm(x):
     """Computes norms of each output unit separately, assuming (HW)IO weights."""
-    if len(x.shape) <= 1:  # Scalars and vectors
+    if tf.rank(x) <= 1:  # Scalars and vectors
         axis = None
         keepdims = False
-    elif len(x.shape) in [2, 3]:  # Linear layers of shape IO
+    elif tf.rank(x) in [2, 3]:  # Linear layers of shape IO
         axis = 0
         keepdims = True
-    elif len(x.shape) == 4:  # Conv kernels of shape HWIO
-        axis = [
-            0,
-            1,
-            2,
-        ]
+    elif tf.rank(x) == 4:  # Conv kernels of shape HWIO
+        axis = [0, 1, 2]
         keepdims = True
     else:
         raise ValueError(f"Got a parameter with shape not in [1, 2, 3, 4]! {x}")
