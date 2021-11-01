@@ -177,7 +177,7 @@ class NFNet(tf.keras.Model):
                     padding="same",
                     name="stem_conv0",
                 ),
-                tf.keras.layers.Lambda(self.activation, name="act_stem_conv0"),
+                tf.keras.layers.Activation(self.activation, name="act_stem_conv0"),
                 self.which_conv(
                     32,
                     kernel_size=3,
@@ -185,7 +185,7 @@ class NFNet(tf.keras.Model):
                     padding="same",
                     name="stem_conv1",
                 ),
-                tf.keras.layers.Lambda(self.activation, name="act_stem_conv1"),
+                tf.keras.layers.Activation(self.activation, name="act_stem_conv1"),
                 self.which_conv(
                     64,
                     kernel_size=3,
@@ -193,7 +193,7 @@ class NFNet(tf.keras.Model):
                     padding="same",
                     name="stem_conv2",
                 ),
-                tf.keras.layers.Lambda(self.activation, name="act_stem_conv2"),
+                tf.keras.layers.Activation(self.activation, name="act_stem_conv2"),
                 self.which_conv(
                     ch,
                     kernel_size=3,
@@ -282,7 +282,7 @@ class NFNet(tf.keras.Model):
         for i, block in enumerate(self.blocks):
             out, res_avg_var = block(out, training=training)
         # Final-conv->activation, pool, dropout, classify
-        out = tf.keras.layers.Lambda(self.activation)(self.final_conv(out))
+        out = tf.keras.layers.Activation(self.activation)(self.final_conv(out))
         pool = tf.math.reduce_mean(out, [1, 2])
         outputs["pool"] = pool
         # Optionally apply dropout
@@ -423,7 +423,7 @@ class NFBlock(tf.keras.Model):
         )
 
     def call(self, x, training):
-        out = tf.keras.layers.Lambda(self.activation)(x) * self.beta
+        out = tf.keras.layers.Activation(self.activation)(x) * self.beta
         if self.stride > 1:  # Average-pool downsample.
             shortcut = tf.keras.layers.AveragePooling2D(
                 pool_size=(2, 2), strides=(2, 2), padding="same"
@@ -435,10 +435,10 @@ class NFBlock(tf.keras.Model):
         else:
             shortcut = x
         out = self.conv0(out)
-        out = self.conv1(tf.keras.layers.Lambda(self.activation)(out))
+        out = self.conv1(tf.keras.layers.Activation(self.activation)(out))
         if self.use_two_convs:
-            out = self.conv1b(tf.keras.layers.Lambda(self.activation)(out))
-        out = self.conv2(tf.keras.layers.Lambda(self.activation)(out))
+            out = self.conv1b(tf.keras.layers.Activation(self.activation)(out))
+        out = self.conv2(tf.keras.layers.Activation(self.activation)(out))
         out = (self.se(out) * 2) * out  # Multiply by 2 for rescaling
         # Get average residual standard deviation for reporting metrics.
         res_avg_var = tf.math.reduce_mean(tf.math.reduce_variance(out, axis=[0, 1, 2]))
