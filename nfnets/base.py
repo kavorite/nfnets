@@ -28,7 +28,7 @@ class WSConv2D(tf.keras.layers.Conv2D):
     def standardize_weight(self, eps):
         mean = tf.math.reduce_mean(self.kernel, axis=(0, 1, 2), keepdims=True)
         var = tf.math.reduce_variance(self.kernel, axis=(0, 1, 2), keepdims=True)
-        fan_in = tf.reduce_prod(self.kernel.shape[:-1])
+        fan_in = tf.cast(tf.reduce_prod(self.kernel.shape[:-1]), self.dtype)
 
         # Manually fused normalization, eq. to (w - mean) * gain / sqrt(N * var)
         scale = (
